@@ -6,7 +6,7 @@ import "core:math/linalg"
 import "core:slice"
 
 Idx :: u32
-Float :: f64
+Float :: f32
 Point :: [2]Float
 
 EMPTY :: max(Idx)
@@ -114,13 +114,18 @@ Hull :: struct {
 }
 
 
-trianglalation_make :: proc(n: int) -> Triangulation {
+triangulation_make :: proc(n: int) -> Triangulation {
 	max_triangles := 2 * n - 5 if n > 2 else 0
 	return Triangulation {
 		triangles = make([dynamic]Idx, 0, max_triangles * 3),
 		halfedges = make([dynamic]Idx, 0, max_triangles * 3),
 		hull = make([dynamic]Idx),
 	}
+}
+triangulation_drop :: proc(this: ^Triangulation) {
+	delete(this.triangles)
+	delete(this.halfedges)
+	delete(this.hull)
 }
 
 triangulation_n_triangles :: proc(this: Triangulation) -> int {
@@ -274,6 +279,12 @@ hull_make :: proc(n: int, center: Point, i0: Idx, i1: Idx, i2: Idx, points: []Po
 	return hull
 }
 
+hull_drop :: proc(this: ^Hull) {
+	delete(this.prev)
+	delete(this.next)
+	delete(this.tri)
+	delete(this.hash)
+}
 
 hull_hash_key :: proc(this: Hull, p: Point) -> u64 {
 	dx := p.x - this.center.x
@@ -330,7 +341,7 @@ calc_bbox_center :: proc(points: []Point) -> Point {
 }
 
 find_closest_point :: proc(points: []Point, p0: Point) -> (idx: Idx, ok: bool) {
-	min_dist := max(f64)
+	min_dist := max(Float)
 	k: Idx = 0
 	for p, i in points {
 		d := linalg.length2(p0 - p)
@@ -339,7 +350,7 @@ find_closest_point :: proc(points: []Point, p0: Point) -> (idx: Idx, ok: bool) {
 			min_dist = d
 		}
 	}
-	if min_dist == max(f64) {
+	if min_dist == max(Float) {
 		return max(Idx), false
 	} else {
 		return k, true
@@ -358,7 +369,7 @@ find_seed_triangle :: proc(points: []Point) -> (idx_1: Idx, idx_2: Idx, idx_3: I
 	p1 := points[i1]
 
 	// find the third point which forms the smallest circumcircle with the first two
-	min_radius := max(f64)
+	min_radius := max(Float)
 	i2: Idx = 0
 	for p, i in points {
 		i := Idx(i)
@@ -372,7 +383,7 @@ find_seed_triangle :: proc(points: []Point) -> (idx_1: Idx, idx_2: Idx, idx_3: I
 		}
 	}
 
-	if min_radius == max(f64) {
+	if min_radius == max(Float) {
 		return {}, {}, {}, false
 	} else {
 		// swap the order of the seed points for counter-clockwise orientation
@@ -386,7 +397,9 @@ find_seed_triangle :: proc(points: []Point) -> (idx_1: Idx, idx_2: Idx, idx_3: I
 
 
 sortf :: proc(f: []FloatAndIdx) {
-	slice.sort(f)
+	slice.sort_by(f, proc(a: FloatAndIdx, b: FloatAndIdx) -> bool {
+		return a.float < b.float
+	})
 }
 
 
@@ -399,20 +412,20 @@ handle_collinear_points :: proc(points: []Point) -> Triangulation {
 	first_pt := points[0]
 
 
-	dist := make([]FloatAndIdx, len(points))
-
+	dists := make([]FloatAndIdx, len(points))
+	defer delete(dists)
 	for p, i in points {
 		d := p.x - first_pt.x
 		if d == 0 {
 			d = p.y - first_pt.y
 		}
-		dist[i] = FloatAndIdx{d, Idx(i)}
+		dists[i] = FloatAndIdx{d, Idx(i)}
 	}
-	sortf(dist)
+	sortf(dists)
 
-	triangulation := trianglalation_make(0)
-	d0 := min(f64)
-	for dist_and_i in dist {
+	triangulation := triangulation_make(0)
+	d0 := min(Float)
+	for dist_and_i in dists {
 		if dist_and_i.float > d0 {
 			append(&triangulation.hull, dist_and_i.idx)
 			d0 = dist_and_i.float
@@ -435,17 +448,19 @@ triangulate :: proc(points: []Point) -> Triangulation {
 	n := len(points)
 	center := circumcenter(points[i0], points[i1], points[i2])
 
-	triangulation := trianglalation_make(n)
+	triangulation := triangulation_make(n)
 	triangulation_add_triangle(&triangulation, i0, i1, i2, EMPTY, EMPTY, EMPTY)
 
 	// sort the points by distance from the seed triangle circumcenter
 	dists := make([]FloatAndIdx, len(points))
+	defer delete(dists)
 	for p, i in points {
 		dists[i] = FloatAndIdx{linalg.length2(center - p), Idx(i)}
 	}
 	sortf(dists)
 
 	hull := hull_make(n, center, i0, i1, i2, points)
+	defer hull_drop(&hull)
 
 	for el, k in dists {
 
