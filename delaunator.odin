@@ -1,4 +1,4 @@
-package voromap
+package delaunator
 
 
 import "core:math"
@@ -6,6 +6,7 @@ import "core:math/linalg"
 import "core:slice"
 
 Idx :: u32
+// Configere this to f64 for double precision
 Float :: f32
 Point :: [2]Float
 
@@ -564,7 +565,6 @@ triangulate :: proc(points: []Point) -> Triangulation {
 			break
 		}
 	}
-
 
 	shrink(&triangulation.triangles)
 	shrink(&triangulation.halfedges)
